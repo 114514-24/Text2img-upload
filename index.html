@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文本图片生成</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --success-color: #28a745;
+            --text-color: #333;
+            --border-color: #ddd;
+            --info-color: #17a2b8;    
+            --danger-color: #dc3545;  
+            --border-radius: 4px;     
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 0.5rem;
+            margin-bottom: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+
+        .preview-section {
+            margin-top: 2rem;
+            text-align: center;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-success {
+            background-color: var(--success-color);
+            color: white;
+        }
+
+        .loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            border: 1px solid var(--border-color);
+            margin-top: 1rem;
+        }
+        .file-link {
+        color: var(--primary-color);
+        font-weight: 500;
+        text-decoration: none;
+        transition: color 0.2s;
+        font-size: 0.95rem;
+        }
+
+        .file-link:hover {
+            color: #0056b3;
+            text-decoration: underline;
+        }
+
+        .delete-notice {
+            color: var(--text-color);
+            font-size: 0.875rem;
+            margin: 0.5rem 0;
+        }
+
+        .delete-link {
+            color: var(--danger-color);
+            font-size: 0.875rem;
+            text-decoration: none;
+            transition: opacity 0.2s;
+        }
+
+        .delete-link:hover {
+            opacity: 0.8;
+            text-decoration: underline;
+        }
+
+        .upload-meta {
+            margin-top: 0.75rem;
+            font-size: 0.875rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>文本图片生成器</h1>
+        
+        <div class="input-group">
+            <textarea 
+                id="textInput" 
+                class="form-control"
+                rows="16" 
+                placeholder="输入要转换的文本..."
+            ></textarea>
+        </div>
+
+        <div class="input-group config-section">
+            <div class="config-item">
+                <label class="form-label" for="fontSize">字体大小</label>
+                <input 
+                    type="number" 
+                    id="fontSize" 
+                    class="form-control"
+                    value="30" 
+                    min="10" 
+                    max="100"
+                >
+            </div>
+
+            <div class="config-item">
+                <label class="form-label" for="fontFamily">字体</label>
+                <select id="fontFamily" class="form-control">
+                    <option value="Arial">Arial</option>
+                    <option value="SimSun">宋体</option>
+                    <option value="Microsoft YaHei">微软雅黑</option>
+                </select>
+            </div>
+            <!-- 在现有字体选择器下方添加 -->
+            <div class="config-item">
+                <label class="form-label">使用本地字体</label>
+                <div class="font-upload-container">
+                    <input 
+                        type="file" 
+                        id="localFont" 
+                        accept=".ttf, .otf"
+                        class="form-control"
+                        style="margin-bottom:8px"
+                    >
+                    <p></p>
+                    <span id="fontName" class="form-control">尚未选择字体</span>
+                    <p></p>
+                </div>
+            </div>
+            <div class="config-item">
+                <label class="form-label" for="textColor">文字颜色</label>
+                <input 
+                    type="color" 
+                    id="textColor" 
+                    class="form-control"
+                    value="#000000"
+                >
+            </div>
+
+            <div class="config-item">
+                <label class="form-label" for="bgColor">背景颜色</label>
+                <input 
+                    type="color" 
+                    id="bgColor" 
+                    class="form-control"
+                    value="#ffffff"
+                >
+            </div>
+        </div>
+
+        <button class="btn btn-primary" onclick="handleGenerate()">生成图片</button>
+        
+        <section class="preview-section">
+            <div id="preview"></div>
+            <div id="uploadLink"></div>
+        </section>
+    </div>
+
+    <script>
+        // 在TextToImage对象中添加字体缓存
+        const fontCache = new Map();
+
+        // 在初始化代码后添加字体加载逻辑
+        document.getElementById('localFont').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                const buffer = await new Response(file).arrayBuffer();
+                const name = await getFontNameFromBuffer(buffer);
+                
+                // 加载字体
+                const fontFace = new FontFace(name, buffer);
+                await fontFace.load();
+                document.fonts.add(fontFace);
+
+                // 更新显示
+                const display = document.getElementById('fontName');
+                display.textContent = `已加载字体: ${name}`;
+                
+                // 添加到下拉选项
+                const option = new Option(name, name);
+                document.getElementById('fontFamily').appendChild(option);
+                
+            } catch(err) {
+                alert(`字体加载失败: ${err.message}`);
+            }
+        });
+
+        // 手动解析字体名称的核心方法
+        async function getFontNameFromBuffer(buffer) {
+            const view = new DataView(buffer);
+            let offset = 0;
+            
+            // 检查字体格式
+            const sfntVersion = view.getUint32(0);
+            if (sfntVersion !== 0x00010000 && sfntVersion !== 0x74727565) {
+                throw new Error('不支持的字体格式');
+            }
+            
+            // 读取命名表位置
+            const numTables = view.getUint16(4);
+            let nameTableOffset = -1;
+            for (let i = 0; i < numTables; i++) {
+                const tableTag = String.fromCharCode(
+                    view.getUint8(12 + i*16),
+                    view.getUint8(12 + i*16 + 1),
+                    view.getUint8(12 + i*16 + 2),
+                    view.getUint8(12 + i*16 + 3)
+                );
+                if (tableTag === 'name') {
+                    nameTableOffset = view.getUint32(12 + i*16 + 8);
+                    break;
+                }
+            }
+            
+            // 解析命名表
+            const format = view.getUint16(nameTableOffset);
+            const count = view.getUint16(nameTableOffset + 2);
+            const storageOffset = nameTableOffset + view.getUint16(nameTableOffset + 4);
+            
+            let fontName = '';
+            for (let i = 0; i < count; i++) {
+                const nameID = view.getUint16(nameTableOffset + 6 + i*12 + 6);
+                if (nameID === 4) { // 4表示字体全名
+                    const platformID = view.getUint16(nameTableOffset + 6 + i*12);
+                    const length = view.getUint16(nameTableOffset + 6 + i*12 + 8);
+                    const offset = view.getUint16(nameTableOffset + 6 + i*12 + 10);
+                    
+                    // 仅处理Unicode编码
+                    if (platformID === 3 || platformID === 0) {
+                        const decoder = new TextDecoder('utf-16be');
+                        fontName = decoder.decode(
+                            new Uint8Array(buffer, storageOffset + offset, length)
+                        );
+                        break;
+                    }
+                }
+            }
+            
+            return fontName || file.name.replace(/\.[^/.]+$/, "");
+        }
+
+        // 工具函数
+        const Utils = {
+            dataURLToFile(dataURL) {
+                if (!dataURL.startsWith('data:')) {
+                    throw new Error('无效的DataURL格式');
+                }
+
+                const [header, data] = dataURL.split(',');
+                const mimeMatch = header.match(/:(.*?);/);
+                if (!mimeMatch) throw new Error('无效的MIME类型');
+
+                const mimeType = mimeMatch[1];
+                const binaryStr = atob(data);
+                const arrayBuffer = new Uint8Array(binaryStr.length);
+
+                for (let i = 0; i < binaryStr.length; i++) {
+                    arrayBuffer[i] = binaryStr.charCodeAt(i);
+                }
+
+                return new File([arrayBuffer], `text-image-${Date.now()}.png`, {
+                    type: mimeType,
+                    lastModified: Date.now()
+                });
+            },
+
+            async uploadFile(file) {
+                const btn = document.querySelector('#uploadBtn');
+                try {
+                    btn.disabled = true;
+                    btn.textContent = '上传中...';
+
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    // 示例真实上传代码
+                    const response = await fetch('/up.php', {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    if (!response.ok) throw new Error('上传失败');
+                    const result = await response.json();
+
+                    return {
+                        success: true,
+                        filename: result.file,  // 根据实际返回字段修改
+                        md5: result.md5,
+                        // filesize: result.size               
+                    };
+
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = '上传图片';
+                }
+            }
+        };
+
+        // 核心功能
+        const TextToImage = {
+            initCanvas(text, styles) {
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                const maxWidth = window.innerWidth > 800 ? 800 : window.innerWidth - 40;
+                
+                const { width, height, lines } = this.calculateLayout(
+                    tempCtx, 
+                    text,
+                    maxWidth,
+                    styles
+                );
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                
+                this.drawText(canvas, lines, styles);
+                return canvas;
+            },
+
+            calculateLayout(ctx, text, maxWidth, { fontSize, fontFamily }) {
+                ctx.font = `${fontSize}px ${fontFamily}`;
+                const lineHeight = fontSize * 1.2;
+                const lines = [];
+                let totalWidth = 0;
+
+                text.split('\n').forEach(paragraph => {
+                    let line = '';
+                    paragraph.split(' ').forEach(word => {
+                        const testLine = line + word + ' ';
+                        const metrics = ctx.measureText(testLine);
+                        
+                        if (metrics.width > maxWidth && line !== '') {
+                            totalWidth = Math.max(totalWidth, ctx.measureText(line).width);
+                            lines.push(line.trim());
+                            line = word + ' ';
+                        } else {
+                            line = testLine;
+                        }
+                    });
+
+                    const remainingLine = line.trim();
+                    if (remainingLine) {
+                        totalWidth = Math.max(totalWidth, ctx.measureText(remainingLine).width);
+                        lines.push(remainingLine);
+                    }
+                });
+
+                return {
+                    width: totalWidth + 40,
+                    height: lines.length * lineHeight + 40,
+                    lines
+                };
+            },
+
+            drawText(canvas, lines, styles) {
+                const ctx = canvas.getContext('2d');
+                const { fontSize, fontFamily, textColor, bgColor } = styles;
+                ctx.font = `${fontSize}px ${styles.fontFamily}`; // 自动使用已加载字体
+                ctx.fillStyle = bgColor;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.font = `${fontSize}px ${fontFamily}`;
+                ctx.fillStyle = textColor;
+                ctx.textBaseline = 'top';
+                ctx.textAlign = 'left'; // 强制左对齐
+                const lineHeight = fontSize * 1.2;
+                const startY = 15 + (canvas.height - (lines.length * lineHeight + 20)) / 2;
+                
+                lines.forEach((line, index) => {
+                    const x = 20; // 固定左侧起始位置
+                    const y = startY + index * lineHeight;
+                    ctx.fillText(line, x, y);
+                });
+            }
+
+        };
+
+        // 事件处理
+        async function handleGenerate() {
+            const text = document.getElementById('textInput').value.trim();
+            if (!text) return alert('请输入有效文本');
+
+            const styles = {
+                fontSize: parseInt(document.getElementById('fontSize').value),
+                fontFamily: document.getElementById('fontFamily').value,
+                textColor: document.getElementById('textColor').value,
+                bgColor: document.getElementById('bgColor').value
+            };
+
+            try {
+                const canvas = TextToImage.initCanvas(text, styles);
+                const dataURL = canvas.toDataURL('image/png');
+                updatePreview(dataURL);
+            } catch (error) {
+                alert(`生成失败: ${error.message}`);
+            }
+        }
+
+        async function handleUpload(dataURL) {
+            try {
+                const file = Utils.dataURLToFile(dataURL);
+                const result = await Utils.uploadFile(file);
+                const url = window.location.host; // 修正为host获取完整域名
+                
+                // 在工具函数对象中添加复制方法（只需定义一次）
+                Utils.copyToClipboard = function(text) {
+                    navigator.clipboard.writeText(text)
+                        // .then(() => alert('已复制到剪贴板'))
+                        .catch(() => alert('复制失败，请手动选择文本'));
+                };
+
+                document.getElementById('uploadLink').innerHTML = `
+                    <div class="upload-link-container">
+                        <span class="delete-notice">🗃️ 文件已上传，点击复制：</span>
+                        <div class="action-buttons" style="gap:0.5rem; margin:0.5rem 0">
+                            <button class="btn" 
+                                    style="padding:0.3rem 0.6rem; font-size:0.85rem"
+                                    onclick="Utils.copyToClipboard('https://i3.wp.com/${url}/${result.filename}')">
+                                📋 Copy URL With CDN
+                            </button>
+                            <button class="btn" 
+                                    style="padding:0.3rem 0.6rem; font-size:0.85rem"
+                                    onclick="Utils.copyToClipboard('https://${url}/${result.filename}')">
+                                📋 Copy URL Without CDN
+                            </button>
+                            <button class="btn btn-primary"
+                                    style="padding:0.3rem 0.6rem; font-size:0.85rem" 
+                                    onclick="Utils.copyToClipboard('<a href=&quot;https://i3.wp.com/${url}/${result.filename}&quot;>图片链接</a>')">
+                                📋 Copy HTML
+                            </button>
+                            <button class="btn btn-success"
+                                    style="padding:0.3rem 0.6rem; font-size:0.85rem"
+                                    onclick="Utils.copyToClipboard('[url=https://i3.wp.com/${url}/${result.filename}]图片链接[/url]')">
+                                📋 Copy BBCode
+                            </button>
+                            <button class="btn"
+                                    style="padding:0.3rem 0.6rem; font-size:0.85rem; background:var(--info-color)" 
+                                    onclick="Utils.copyToClipboard('[图片描述](https://i3.wp.com/${url}/${result.filename})')">
+                                📋 Copy Markdown
+                            </button>
+                        </div>
+                        
+                        <div class="upload-meta">
+                            <span class="delete-notice">⚠️ 删除图片：</span>
+                            <a class="delete-link" href="del.php?filepath=${result.filename.replace('uploads/', '')}&md5=${result.md5}" target="_blank">
+                                点击此处可以删除图片
+                            </a>
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                alert(`上传失败: ${error.message}`);
+            }
+        }
+
+
+        // DOM更新
+        function updatePreview(dataURL) {
+            const preview = document.getElementById('preview');
+            preview.innerHTML = `
+                <img src="${dataURL}" class="preview-image">
+                <div class="action-buttons">
+                    <a href="${dataURL}" 
+                       download="text-image.png" 
+                       class="btn btn-primary">
+                        下载图片 (${Math.round(dataURL.length/1024)}KB)
+                    </a>
+                    <button id="uploadBtn" 
+                            class="btn btn-success"
+                            onclick="handleUpload('${dataURL}')">
+                        上传图片
+                    </button>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
